@@ -24,8 +24,7 @@ function updateUI(data, index, total) {
     document.getElementById('routeCount').innerText = `${index + 1} of ${total}`;
     
     const km = (data.rawDistance / 1000).toFixed(1);
-    const mins = Math.round(data.rawDuration / 60);
-    document.getElementById('resStats').innerText = `${km} km | ${mins} min trip`;
+    document.getElementById('resStats').innerText = `${km} km | ${data.delay} min trip`;
 
     document.getElementById('resChance').innerText = (data.chance * 100).toFixed(0);
     document.getElementById('resDelay').innerText = data.delay;
@@ -110,8 +109,11 @@ async function getPrediction() {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ 
                     distance: route.summary.totalDistance,
-                    duration: route.summary.totalTime,
-                    routeIndex: i
+                    routeIndex: i,
+                    weather: 'clear',
+                    vehicleType: 'car',
+                    freeFlowSpeed: 50,
+                    currentSpeed: 55
                 })
             });
             const data = await response.json();
@@ -119,15 +121,13 @@ async function getPrediction() {
                 routeData: route,
                 predictionData: {
                     ...data,
-                    rawDistance: route.summary.totalDistance,
-                    rawDuration: route.summary.totalTime
+                    rawDistance: route.summary.totalDistance
                 }
             };
         });
 
         const allRouteResults = await Promise.all(predictionPromises);
-
-        allRouteResults.sort((a, b) => a.predictionData.chance - b.predictionData.chance);
+        allRouteResults.sort((a, b) => a.predictionData.delay - b.predictionData.delay);
 
         allRouteResults.forEach((result, i) => {
             const isBestChance = (i === 0);
