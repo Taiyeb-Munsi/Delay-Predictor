@@ -89,8 +89,15 @@ async function getPrediction() {
             serviceParameters: { alternatives: true }
         }),
         show: false,
-        lineOptions: { styles: [{ opacity: 0 }] }
+        collapsible: false,
+        fitSelectedRoutes: false,
+        showAlternatives: false,
+        lineOptions: { styles: [{ opacity: 0 }] },
+        createMarker: function() { return null; }
     }).addTo(map);
+
+    const lrmContainer = window.routingControl.getContainer();
+    if (lrmContainer) lrmContainer.style.display = 'none';
 
     window.routingControl.on('routesfound', async function(e) {
         const routes = e.routes;
