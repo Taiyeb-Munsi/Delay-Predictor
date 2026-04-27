@@ -3,37 +3,38 @@
 <head>
     <title>Delay Predictor</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div id="map"></div>
-
     <div class="card">
         <h2>Delay Predictor</h2>
-        
         <input type="text" id="initalDestination" placeholder="From">
         <input type="text" id="finalDestination" placeholder="To"> 
-        
         <div class="button-group">
             <button id="predictBtn" onclick="getPrediction()">Predict Delay</button>
-            <button id="nextRouteBtn" onclick="cycleRoute()" style="display:none;">Next Route</button>
+            <button id="nextRouteBtn" onclick="cycleRoute()" style="display:none;">Next</button>
         </div>
-
         <div id="result">
-            <hr>
             <div class="res-header">
                 <h3 id="resRoute"></h3>
                 <span id="routeCount"></span>
             </div>
-            <p><strong>Travel Stats:</strong> <span id="resStats"></span></p>
+            <p><strong>Stats:</strong> <span id="resStats"></span></p>
             <p><strong>Delay Chance:</strong> <span id="resChance"></span>%</p>
-            <p><strong>Est. Delay:</strong> <span id="resDelay"></span> mins</p>
-            <p><strong>Total Impact:</strong> <span id="resChain"></span> mins</p>
+            <p><strong>Est. Time:</strong> <span id="resDelay"></span> mins</p>
+            <p><strong>Impact:</strong> <span id="resChain"></span> mins</p>
             <div id="resStatus"></div>
         </div>
     </div>
-
+    <div class="card" id="simPanel">
+        <label>Vehicle Type</label>
+        <select id="vehicleSelect" class="dropDown">
+            <option value="car">Car</option>
+            <option value="bike">Bike</option>
+            <option value="truck">Truck</option>
+        </select>
+    </div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>

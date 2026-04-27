@@ -1,31 +1,33 @@
-const map = L.map('map').setView([51.505, -0.09], 13);
+const map = L.map('map').setView([28.6139, 77.2090], 12);
 let currentRouteIndex = 0;
+window.routeLines = [];
 
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
-}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 async function getCoords(address) {
-    if (!address) return null;
     try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
-        const response = await fetch(url);
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`);
         const results = await response.json();
         return results.length > 0 ? [parseFloat(results[0].lat), parseFloat(results[0].lon)] : null;
-    } catch (e) { 
-        return null; 
+    } catch (e) { return null; }
+}
+
+function sampleCoords(coordinates, count) {
+    const total = coordinates.length;
+    if (total <= count) return coordinates.map(c => ({ lat: c.lat, lng: c.lng }));
+    const result = [];
+    for (let i = 0; i < count; i++) {
+        const idx = Math.round((i / (count - 1)) * (total - 1));
+        result.push({ lat: coordinates[idx].lat, lng: coordinates[idx].lng });
     }
+    return result;
 }
 
 function updateUI(data, index, total) {
     document.getElementById('result').style.display = 'block';
-    document.getElementById('resRoute').innerText = "Route " + (index + 1);
+    document.getElementById('resRoute').innerText = 'Route ' + (index + 1);
     document.getElementById('routeCount').innerText = `${index + 1} of ${total}`;
-    
-    const km = (data.rawDistance / 1000).toFixed(1);
-    document.getElementById('resStats').innerText = `${km} km | ${data.delay} min trip`;
-
+    document.getElementById('resStats').innerText = `${(data.rawDistance / 1000).toFixed(1)} km | ${data.delay} min trip`;
     document.getElementById('resChance').innerText = (data.chance * 100).toFixed(0);
     document.getElementById('resDelay').innerText = data.delay;
     document.getElementById('resChain').innerText = data.chain_impact;
@@ -34,14 +36,12 @@ function updateUI(data, index, total) {
 }
 
 function switchToRoute(selectedLine) {
-    if (!window.routeLines) return;
     window.routeLines.forEach((line, index) => {
-        const isTarget = (line === selectedLine);
+        const isTarget = line === selectedLine;
         if (isTarget) currentRouteIndex = index;
-        
-        line.setStyle({ 
-            weight: isTarget ? 8 : 4, 
-            opacity: isTarget ? 0.9 : 0.4, 
+        line.setStyle({
+            weight: isTarget ? 8 : 4,
+            opacity: isTarget ? 0.9 : 0.4,
             dashArray: isTarget ? '' : '5, 10',
             color: isTarget ? line.predictionData.color : '#95a5a6'
         });
@@ -53,122 +53,95 @@ function switchToRoute(selectedLine) {
 }
 
 function cycleRoute() {
-    if (!window.routeLines || window.routeLines.length === 0) return;
+    if (window.routeLines.length === 0) return;
     currentRouteIndex = (currentRouteIndex + 1) % window.routeLines.length;
     switchToRoute(window.routeLines[currentRouteIndex]);
 }
 
 async function getPrediction() {
     const btn = document.getElementById('predictBtn');
-    const startVal = document.getElementById('initalDestination').value;
-    const endVal = document.getElementById('finalDestination').value;
+    const startVal = document.getElementById('initalDestination').value.trim();
+    const endVal = document.getElementById('finalDestination').value.trim();
 
-    if (!startVal || !endVal) {
-        alert("Please enter both start and destination");
-        return;
-    }
+    if (!startVal || !endVal) return alert('Enter both locations');
 
     btn.disabled = true;
-    btn.innerText = "Loading...";
+    btn.innerText = 'Analyzing Routes...';
 
     const startCoords = await getCoords(startVal);
     const endCoords = await getCoords(endVal);
 
     if (!startCoords || !endCoords) {
-        alert("Could not find coordinates for those locations.");
         btn.disabled = false;
-        btn.innerText = "Predict Delay";
-        return;
+        btn.innerText = 'Predict Delay';
+        return alert('Locations not found');
     }
 
     if (window.routingControl) map.removeControl(window.routingControl);
-    if (window.routeLines) window.routeLines.forEach(l => map.removeLayer(l));
-    
+    window.routeLines.forEach(l => map.removeLayer(l));
     window.routeLines = [];
-    document.getElementById('nextRouteBtn').style.display = 'none';
 
     window.routingControl = L.Routing.control({
         waypoints: [L.latLng(startCoords), L.latLng(endCoords)],
         router: L.Routing.osrmv1({
             serviceUrl: 'https://router.project-osrm.org/route/v1',
             profile: 'driving',
-            serviceParameters: { alternatives: true } 
+            serviceParameters: { alternatives: true }
         }),
         show: false,
-        addWaypoints: false,
-        createMarker: () => null,
         lineOptions: { styles: [{ opacity: 0 }] }
     }).addTo(map);
 
     window.routingControl.on('routesfound', async function(e) {
         const routes = e.routes;
-        
-        const predictionPromises = routes.map(async (route, i) => {
-            const response = await fetch('/predict', {
+        const vehicle = document.getElementById('vehicleSelect').value;
+
+        const results = await Promise.all(routes.map(async (route, i) => {
+            const sampledPoints = sampleCoords(route.coordinates, 7);
+
+            const res = await fetch('/predict', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ 
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     distance: route.summary.totalDistance,
+                    osrmTimeSecs: route.summary.totalTime,
                     routeIndex: i,
-                    weather: 'clear',
-                    vehicleType: 'car',
-                    freeFlowSpeed: 50,
-                    currentSpeed: 55
+                    vehicleType: vehicle,
+                    numInstructions: route.instructions ? route.instructions.length : 0,
+                    sampledPoints: sampledPoints
                 })
             });
-            const data = await response.json();
-            return {
-                routeData: route,
-                predictionData: {
-                    ...data,
-                    rawDistance: route.summary.totalDistance
-                }
-            };
-        });
+            const pData = await res.json();
+            return { route, pData };
+        }));
 
-        const allRouteResults = await Promise.all(predictionPromises);
-        allRouteResults.sort((a, b) => a.predictionData.delay - b.predictionData.delay);
+        results.sort((a, b) => a.pData.delay - b.pData.delay);
 
-        allRouteResults.forEach((result, i) => {
-            const isBestChance = (i === 0);
-            
-            const line = L.polyline(result.routeData.coordinates, {
-                color: isBestChance ? result.predictionData.color : '#95a5a6',
-                weight: isBestChance ? 8 : 4,
-                opacity: isBestChance ? 0.9 : 0.4,
-                dashArray: isBestChance ? '' : '5, 10',
+        results.forEach((res, i) => {
+            const isBest = i === 0;
+            const line = L.polyline(res.route.coordinates, {
+                color: isBest ? res.pData.color : '#95a5a6',
+                weight: isBest ? 8 : 4,
+                opacity: isBest ? 0.9 : 0.4,
+                dashArray: isBest ? '' : '5, 10',
                 interactive: true
             }).addTo(map);
 
-            line.predictionData = result.predictionData;
+            line.predictionData = { ...res.pData, rawDistance: res.route.summary.totalDistance };
             window.routeLines.push(line);
-
-            line.on('click', (ev) => {
-                L.DomEvent.stopPropagation(ev);
-                switchToRoute(line);
-            });
-
-            if (isBestChance) {
-                currentRouteIndex = i;
-                updateUI(result.predictionData, i, allRouteResults.length);
-                line.bringToFront();
-            }
+            line.on('click', () => switchToRoute(line));
+            if (isBest) updateUI(line.predictionData, 0, results.length);
         });
 
+        document.getElementById('nextRouteBtn').style.display = results.length > 1 ? 'inline-block' : 'none';
+        map.fitBounds(new L.featureGroup(window.routeLines).getBounds());
         btn.disabled = false;
-        btn.innerText = "Predict Delay";
-        
-        if (window.routeLines.length > 1) {
-            document.getElementById('nextRouteBtn').style.display = 'inline-block';
-        }
-        
-        const group = new L.featureGroup(window.routeLines);
-        map.fitBounds(group.getBounds());
+        btn.innerText = 'Predict Delay';
     });
 
-    window.routingControl.on('routingerror', () => {
-        alert("Could not find a route between these points.");
+    window.routingControl.on('routingerror', function() {
         btn.disabled = false;
-        btn.innerText = "Predict Delay";
+        btn.innerText = 'Predict Delay';
+        alert('Could not find a route between these locations.');
     });
 }
